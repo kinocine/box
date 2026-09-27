@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BoxCraft - 직관적인 박스 웹사이트 빌더</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+  
+  <style>
+    body {
+      font-family: 'Noto Sans KR', 'Plus Jakarta Sans', sans-serif;
+      user-select: none;
+    }
+    
+    /* 캔버스 모눈종이 그리드 패턴 */
+    .canvas-grid {
+      background-size: 24px 24px;
+      background-image: 
+        linear-gradient(to right, rgba(203, 213, 225, 0.45) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(203, 213, 225, 0.45) 1px, transparent 1px);
+    }
+    
+    .canvas-plain {
+      background-image: none !important;
+    }
+
+    /* 선택된 박스 아웃라인 및 크기 조절 핸들 */
+    .box-selected {
+      outline: 2px solid #3b82f6 !important;
+      outline-offset: 1px;
+      box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.25);
+    }
+
+    .resize-handle {
+      position: absolute;
+      width: 12px;
+      height: 12px;
+      background-color: #2563eb;
+      border: 2px solid #ffffff;
+      border-radius: 9999px;
+      display: none;
+      z-index: 40;
+    }
+
+    .box-selected .resize-handle {
+      display: block;
+    }
+
+    .resize-handle.br {
+      bottom: -6px;
+      right: -6px;
+      cursor: nwse-resize;
+    }
+
+    .resize-handle.bl {
+      bottom: -6px;
+      left: -6px;
+      cursor: nesw-resize;
+    }
+
+    .resize-handle.r {
+      top: calc(50% - 6px);
+      right: -6px;
+      cursor: ew-resize;
+    }
+
+    .resize-handle.b {
+      bottom: -6px;
+      left: calc(50% - 6px);
+      cursor: ns-resize;
+    }
+
+    /* 텍스트 편집 영역 활성화 스타일 */
+    [contenteditable="true"] {
+      user-select: text !important;
+      cursor: text !important;
+      outline: none;
+    }
+
+    [contenteditable="true"]:focus {
+      outline: 1.5px dashed #3b82f6;
+      border-radius: 4px;
+    }
+
+    /* 커스텀 스크롤바 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen overflow-hidden bg-slate-900 text-slate-800 flex flex-col antialiased">
+
+  <header class="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 z-30 select-none">
+    <div class="flex items-center space-x-3">
+      <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20 font-black text-lg tracking-wider">
+        B
+      </div>
+      <div>
+        <span class="font-bold text-slate-100 text-base tracking-tight">BoxCraft</span>
+        <span class="text-xs text-blue-400 bg-blue-950/80 px-2 py-0.5 rounded-full ml-1 border border-blue-800 font-mono">WYSIWYG</span>
+      </div>
+      <span class="text-xs text-slate-400 hidden sm:inline ml-2 pl-3 border-l border-slate-700">원하는 박스를 클릭하거나 드래그하여 배치하세요</span>
+    </div>
+
+    <!-- 중앙 도구 및 뷰포트 프리셋 -->
+    <div class="flex items-center bg-slate-800/90 rounded-lg p-1 border border-slate-700 text-xs">
+      <button id="grid-toggle-btn" class="px-2.5 py-1 text-slate-300 hover:text-white rounded flex items-center gap-1.5 transition hover:bg-slate-700 active:scale-95" title="모눈 그리드 표시/숨김">
+        <i data-lucide="grid" class="w-3.5 h-3.5 text-blue-400"></i>
+        <span>그리드</span>
+      </button>
+      <div class="h-3 w-[1px] bg-slate-700 mx-1"></div>
+      <button id="snap-toggle-btn" class="px-2.5 py-1 text-slate-300 hover:text-white rounded flex items-center gap-1.5 transition hover:bg-slate-700 active:scale-95" title="자석 스냅 이동 (10px)">
+        <i data-lucide="magnet" class="w-3.5 h-3.5 text-emerald-400"></i>
+        <span id="snap-label">스냅 켬</span>
+      </button>
+      <div class="h-3 w-[1px] bg-slate-700 mx-1"></div>
+      <button id="clear-canvas-btn" class="px-2.5 py-1 text-rose-400 hover:text-rose-300 rounded flex items-center gap-1 transition hover:bg-rose-950/40 active:scale-95" title="전체 지우기">
+        <i data-lucide="trash" class="w-3.5 h-3.5"></i>
+        <span>비우기</span>
+      </button>
+    </div>
+
+    <!-- 우측 내보내기 및 모드 전환 액션 -->
+    <div class="flex items-center space-x-2">
+      <!-- 모드 전환 (편집 / 미리보기) -->
+      <button id="mode-toggle-btn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-800 text-slate-200 hover:bg-slate-700 border border-slate-700 transition active:scale-95">
+        <i data-lucide="eye" class="w-4 h-4 text-blue-400"></i>
+        <span id="mode-text">미리보기</span>
+      </button>
+
+      <!-- HTML 내보내기 -->
+      <button id="export-html-btn" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-sm transition active:scale-95 shadow-blue-500/20">
+        <i data-lucide="code" class="w-4 h-4"></i>
+        <span>HTML 추출</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="flex-1 flex overflow-hidden relative">
+
+    <!-- 좌측 사이드바: 박스 컴포넌트 팔레트 -->
+    <aside id="palette-sidebar" class="w-64 bg-slate-900 border-r border-slate-800 flex flex-col z-20 transition-all select-none">
+      <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i data-lucide="layers" class="w-4 h-4 text-blue-500"></i>
+          박스 템플릿
+        </span>
+        <span class="text-[11px] text-slate-400 bg-slate-800 px-1.5 py-0.5 rounded">클릭/드래그</span>
+      </div>
+
+      <div class="p-3 overflow-y-auto space-y-2.5 flex-1">
+        <!-- 1. 헤딩 타이틀 박스 -->
+        <div draggable="true" data-type="heading" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="heading" class="w-4 h-4 text-blue-400"></i>
+            <span class="text-xs font-semibold">헤딩 제목 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">강조되는 큰 제목과 서브 텍스트를 담는 박스</p>
+        </div>
+
+        <!-- 2. 본문 설명 텍스트 박스 -->
+        <div draggable="true" data-type="text" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="align-left" class="w-4 h-4 text-emerald-400"></i>
+            <span class="text-xs font-semibold">설명글 / 본문 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">자세한 안내 문구와 설명을 넣는 다단 텍스트 박스</p>
+        </div>
+
+        <!-- 3. 카드 컨테이너 박스 -->
+        <div draggable="true" data-type="card" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="square" class="w-4 h-4 text-amber-400"></i>
+            <span class="text-xs font-semibold">카드 컨테이너 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">테두리와 배경색이 적용된 독립형 카드 박스</p>
+        </div>
+
+        <!-- 4. 버튼 / CTA 박스 -->
+        <div draggable="true" data-type="button" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="mouse-pointer-click" class="w-4 h-4 text-purple-400"></i>
+            <span class="text-xs font-semibold">클릭 버튼 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">링크 이동 또는 액션 유도를 위한 반응형 버튼</p>
+        </div>
+
+        <!-- 5. 이미지 박스 -->
+        <div draggable="true" data-type="image" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="image" class="w-4 h-4 text-pink-400"></i>
+            <span class="text-xs font-semibold">이미지/미디어 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">배너나 아이콘 사진을 표시하는 그래픽 박스</p>
+        </div>
+
+        <!-- 6. 빈 자유 박스 -->
+        <div draggable="true" data-type="blank" class="palette-item group p-3 rounded-xl bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/80 cursor-grab active:cursor-grabbing transition shadow-sm hover:shadow">
+          <div class="flex items-center gap-2.5 mb-1 text-slate-200 group-hover:text-blue-400">
+            <i data-lucide="box" class="w-4 h-4 text-cyan-400"></i>
+            <span class="text-xs font-semibold">자유 빈 박스</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-snug">원하는 크기와 색상으로 직접 커스텀하는 백지 박스</p>
+        </div>
+      </div>
+
+      <!-- 도움말 풋터 -->
+      <div class="p-3 bg-slate-950/60 border-t border-slate-800 text-[11px] text-slate-400 space-y-1">
+        <div class="flex items-center gap-1 text-slate-300 font-medium">
+          <i data-lucide="help-circle" class="w-3.5 h-3.5 text-blue-400"></i>
+          사용 팁
+        </div>
+        <p>• 박스 안 텍스트를 클릭하면 바로 타이핑 수정이 가능합니다.</p>
+        <p>• 모서리 핸들을 잡고 늘려 크기를 바꿀 수 있습니다.</p>
+      </div>
+    </aside>
+
+    <!-- 중앙 편집 캔버스 (흰색 백지 영역) -->
+    <div id="canvas-wrapper" class="flex-1 bg-slate-950 overflow-auto relative p-8 flex items-start justify-center">
+      <!-- 실제 웹페이지 백지 캔버스 (1000px 기준) -->
+      <div id="builder-canvas" class="canvas-grid bg-white w-full max-w-[1020px] min-h-[960px] rounded-2xl shadow-2xl relative border border-slate-700/30 overflow-hidden transition-all duration-150">
+        
+        <!-- 빈 상태 가이드 문구 -->
+        <div id="empty-state-guide" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-slate-400 space-y-2 select-none">
+          <div class="w-16 h-16 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200 shadow-sm">
+            <i data-lucide="plus-circle" class="w-8 h-8 text-blue-500"></i>
+          </div>
+          <p class="text-base font-semibold text-slate-600">왼쪽 목록에서 박스를 끌어다 놓으세요</p>
+          <p class="text-xs text-slate-400">박스를 자유롭게 옮기고, 모서리를 늘리며 글자를 써넣으세요.</p>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 우측 스타일 & 박스 속성 인스펙터 패널 -->
+    <aside id="inspector-sidebar" class="w-72 bg-slate-900 border-l border-slate-800 flex flex-col z-20 select-none overflow-y-auto">
+      <div class="p-3.5 border-b border-slate-800 flex items-center justify-between">
+        <span class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+          <i data-lucide="sliders" class="w-4 h-4 text-blue-500"></i>
+          박스 속성 설정
+        </span>
+        <button id="delete-selected-btn" disabled class="text-xs text-rose-400 disabled:opacity-30 hover:text-rose-300 flex items-center gap-1 transition">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+          삭제
+        </button>
+      </div>
+
+      <!-- 선택된 박스가 없을 때 -->
+      <div id="no-selection-panel" class="p-8 text-center flex-1 flex flex-col items-center justify-center text-slate-400">
+        <div class="w-12 h-12 rounded-xl bg-slate-800 flex items-center justify-center text-slate-400 mb-3 border border-slate-700/50">
+          <i data-lucide="mouse-pointer" class="w-5 h-5"></i>
+        </div>
+        <p class="text-xs font-medium text-slate-300">선택된 박스가 없습니다</p>
+        <p class="text-[11px] text-slate-400 mt-1">캔버스 위의 박스를 클릭하여 크기, 색상, 테두리를 조절해보세요.</p>
+      </div>
+
+      <!-- 선택된 박스 속성 편집 폼 -->
+      <div id="selection-panel" class="p-4 space-y-4 hidden text-xs text-slate-300 flex-1">
+        
+        <!-- 박스 액션 (복제) -->
+        <div class="flex items-center gap-2 pb-2 border-b border-slate-800">
+          <button id="duplicate-box-btn" class="flex-1 py-1.5 px-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg flex items-center justify-center gap-1 text-[11px] transition">
+            <i data-lucide="copy" class="w-3 h-3 text-blue-400"></i>
+            박스 복제
+          </button>
+          <button id="bring-front-btn" class="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg flex items-center justify-center gap-1 text-[11px] transition" title="맨 앞으로 가져오기">
+            <i data-lucide="arrow-up-to-line" class="w-3 h-3"></i>
+          </button>
+          <button id="send-back-btn" class="py-1.5 px-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg flex items-center justify-center gap-1 text-[11px] transition" title="맨 뒤로 보내기">
+            <i data-lucide="arrow-down-to-line" class="w-3 h-3"></i>
+          </button>
+        </div>
+
+        <!-- 1. 크기 (Width, Height) -->
+        <div class="space-y-2">
+          <label class="font-semibold text-slate-300 text-[11px] uppercase tracking-wider block">크기 (가로 × 세로)</label>
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <span class="text-[10px] text-slate-400 block mb-1">너비 (px)</span>
+              <input type="number" id="prop-width" step="10" min="50" max="1000" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+            </div>
+            <div>
+              <span class="text-[10px] text-slate-400 block mb-1">높이 (px)</span>
+              <input type="number" id="prop-height" step="10" min="30" max="1500" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 색상 (배경색, 텍스트색) -->
+        <div class="space-y-2">
+          <label class="font-semibold text-slate-300 text-[11px] uppercase tracking-wider block">색상 스타일</label>
+          <div class="space-y-2">
+            <div class="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span class="text-xs">배경 색상</span>
+              <div class="flex items-center gap-2">
+                <input type="color" id="prop-bg-color" class="w-7 h-7 rounded border border-slate-700 cursor-pointer bg-transparent">
+                <input type="text" id="prop-bg-hex" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-mono uppercase text-center">
+              </div>
+            </div>
+            <div class="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span class="text-xs">글자 색상</span>
+              <div class="flex items-center gap-2">
+                <input type="color" id="prop-text-color" class="w-7 h-7 rounded border border-slate-700 cursor-pointer bg-transparent">
+                <input type="text" id="prop-text-hex" class="w-16 bg-slate-900 border border-slate-700 rounded px-1.5 py-0.5 text-[11px] font-mono uppercase text-center">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. 테두리 및 모서리 둥글기 -->
+        <div class="space-y-2">
+          <label class="font-semibold text-slate-300 text-[11px] uppercase tracking-wider block">외곽선 & 굴곡</label>
+          
+          <div class="space-y-2">
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>모서리 둥글기</span>
+                <span id="radius-val">12px</span>
+              </div>
+              <input type="range" id="prop-radius" min="0" max="40" step="2" class="w-full accent-blue-500">
+            </div>
+
+            <div>
+              <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+                <span>테두리 두께</span>
+                <span id="border-val">1px</span>
+              </div>
+              <input type="range" id="prop-border-width" min="0" max="8" step="1" class="w-full accent-blue-500">
+            </div>
+
+            <div class="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span class="text-xs">테두리 색</span>
+              <input type="color" id="prop-border-color" class="w-7 h-7 rounded border border-slate-700 cursor-pointer bg-transparent">
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. 여백 (안쪽 패딩) -->
+        <div class="space-y-2">
+          <div class="flex justify-between text-[11px] text-slate-400">
+            <span class="font-semibold text-slate-300 uppercase tracking-wider">안쪽 여백 (Padding)</span>
+            <span id="padding-val">16px</span>
+          </div>
+          <input type="range" id="prop-padding" min="0" max="64" step="4" class="w-full accent-blue-500">
+        </div>
+
+        <!-- 5. 텍스트 정렬 & 폰트 크기 -->
+        <div class="space-y-2">
+          <label class="font-semibold text-slate-300 text-[11px] uppercase tracking-wider block">텍스트 정렬 및 크기</label>
+          <div class="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+            <button data-align="left" class="align-btn py-1 rounded hover:bg-slate-800 flex justify-center text-slate-400 hover:text-white transition">
+              <i data-lucide="align-left" class="w-3.5 h-3.5"></i>
+            </button>
+            <button data-align="center" class="align-btn py-1 rounded hover:bg-slate-800 flex justify-center text-slate-400 hover:text-white transition">
+              <i data-lucide="align-center" class="w-3.5 h-3.5"></i>
+            </button>
+            <button data-align="right" class="align-btn py-1 rounded hover:bg-slate-800 flex justify-center text-slate-400 hover:text-white transition">
+              <i data-lucide="align-right" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+          <div class="pt-1">
+            <div class="flex justify-between text-[11px] text-slate-400 mb-1">
+              <span>기본 폰트 크기</span>
+              <span id="fontsize-val">16px</span>
+            </div>
+            <input type="range" id="prop-font-size" min="12" max="52" step="2" class="w-full accent-blue-500">
+          </div>
+        </div>
+
+        <!-- 6. 그림자 효과 -->
+        <div class="space-y-2">
+          <label class="font-semibold text-slate-300 text-[11px] uppercase tracking-wider block">그림자 (Shadow)</label>
+          <select id="prop-shadow" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-slate-200 focus:border-blue-500 focus:outline-none">
+            <option value="none">없음</option>
+            <option value="0 1px 3px rgba(0,0,0,0.1)">약하게 (Small)</option>
+            <option value="0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)">보통 (Medium)</option>
+            <option value="0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -4px rgba(0,0,0,0.1)">강하게 (Large)</option>
+            <option value="0 20px 25px -5px rgba(0,0,0,0.15)">입체감 (Extra Large)</option>
+          </select>
+        </div>
+
+      </div>
+    </aside>
+  </main>
+
+  <!-- HTML 내보내기 모달 -->
+  <div id="export-modal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
+      <div class="p-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+            <i data-lucide="code-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-slate-100 text-sm">HTML 코드 생성 완료</h3>
+            <p class="text-xs text-slate-400">어디서든 열리는 독립형 웹페이지 코드입니다.</p>
+          </div>
+        </div>
+        <button id="close-export-modal" class="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-4 flex-1 overflow-hidden flex flex-col">
+        <textarea id="exported-code-area" readonly class="w-full flex-1 min-h-[300px] bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-xs text-emerald-400 focus:outline-none resize-none"></textarea>
+      </div>
+
+      <div class="p-4 border-t border-slate-800 flex items-center justify-end gap-2 bg-slate-900/50">
+        <button id="copy-html-btn" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-sm transition active:scale-95">
+          <i data-lucide="copy" class="w-4 h-4"></i>
+          <span id="copy-btn-text">클립보드에 복사</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 간단 알림 토스트 (alert 대체) -->
+  <div id="toast" class="fixed bottom-5 left-1/2 -translate-x-1/2 bg-slate-800 border border-slate-700 text-slate-200 px-4 py-2 rounded-xl shadow-lg text-xs flex items-center gap-2 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none z-50">
+    <i data-lucide="info" class="w-4 h-4 text-blue-400"></i>
+    <span id="toast-message">알림</span>
+  </div>
+
+  <script>
+    // 상태 관리 변수
+    const state = {
+      selectedElement: null,
+      isEditMode: true,
+      showGrid: true,
+      snapToGrid: true,
+      gridSize: 10,
+      nextZIndex: 10,
+      activeDrag: null,
+      activeResize: null
+    };
+
+    // DOM 노드 캐싱
+    const canvas = document.getElementById('builder-canvas');
+    const emptyGuide = document.getElementById('empty-state-guide');
+    const noSelectionPanel = document.getElementById('no-selection-panel');
+    const selectionPanel = document.getElementById('selection-panel');
+    const deleteBtn = document.getElementById('delete-selected-btn');
+    const duplicateBtn = document.getElementById('duplicate-box-btn');
+    const bringFrontBtn = document.getElementById('bring-front-btn');
+    const sendBackBtn = document.getElementById('send-back-btn');
+    const modeToggleBtn = document.getElementById('mode-toggle-btn');
+    const modeText = document.getElementById('mode-text');
+    const gridToggleBtn = document.getElementById('grid-toggle-btn');
+    const snapToggleBtn = document.getElementById('snap-toggle-btn');
+    const snapLabel = document.getElementById('snap-label');
+    const clearCanvasBtn = document.getElementById('clear-canvas-btn');
+    const exportBtn = document.getElementById('export-html-btn');
+    const exportModal = document.getElementById('export-modal');
+    const closeExportBtn = document.getElementById('close-export-modal');
+    const exportedCodeArea = document.getElementById('exported-code-area');
+    const copyHtmlBtn = document.getElementById('copy-html-btn');
+    const copyBtnText = document.getElementById('copy-btn-text');
+    const toast = document.getElementById('toast');
+    const toastMsg = document.getElementById('toast-message');
+
+    // 인스펙터 입력 폼 엘리먼트들
+    const propWidth = document.getElementById('prop-width');
+    const propHeight = document.getElementById('prop-height');
+    const propBgColor = document.getElementById('prop-bg-color');
+    const propBgHex = document.getElementById('prop-bg-hex');
+    const propTextColor = document.getElementById('prop-text-color');
+    const propTextHex = document.getElementById('prop-text-hex');
+    const propRadius = document.getElementById('prop-radius');
+    const radiusVal = document.getElementById('radius-val');
+    const propBorderWidth = document.getElementById('prop-border-width');
+    const borderVal = document.getElementById('border-val');
+    const propBorderColor = document.getElementById('prop-border-color');
+    const propPadding = document.getElementById('prop-padding');
+    const paddingVal = document.getElementById('padding-val');
+    const propFontSize = document.getElementById('prop-font-size');
+    const fontSizeVal = document.getElementById('fontsize-val');
+    const propShadow = document.getElementById('prop-shadow');
+
+    // 토스트 팝업 함수 (alert 대체)
+    function showToast(message) {
+      toastMsg.textContent = message;
+      toast.classList.remove('translate-y-20', 'opacity-0');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0');
+      }, 2400);
+    }
+
+    // RGB를 Hex 색상값으로 변환
+    function rgbToHex(rgb) {
+      if (!rgb || rgb === 'transparent' || rgb.startsWith('rgba(0, 0, 0, 0)')) return '#ffffff';
+      if (rgb.startsWith('#')) return rgb;
+      const parts = rgb.match(/\d+/g);
+      if (!parts || parts.length < 3) return '#ffffff';
+      return '#' + parts.slice(0, 3).map(n => parseInt(n).toString(16).padStart(2, '0')).join('');
+    }
+
+    const templates = {
+      heading: {
+        width: 480,
+        height: 120,
+        bg: '#ffffff',
+        textColor: '#0f172a',
+        border: '1px solid #e2e8f0',
+        radius: '16px',
+        padding: '24px',
+        fontSize: '28px',
+        shadow: '0 4px 6px -1px rgba(0,0,0,0.1)',
+        html: `
+          <h1 class="font-bold text-slate-900 leading-tight mb-1" contenteditable="true">원하는 타이틀을 입력하세요</h1>
+          <p class="text-sm text-slate-500 font-normal" contenteditable="true">이곳에 간단한 부제목 또는 요약 설명을 적어보세요.</p>
+        `
+      },
+      text: {
+        width: 440,
+        height: 160,
+        bg: '#f8fafc',
+        textColor: '#334155',
+        border: '1px solid #cbd5e1',
+        radius: '12px',
+        padding: '20px',
+        fontSize: '15px',
+        shadow: '0 1px 3px rgba(0,0,0,0.1)',
+        html: `
+          <h3 class="font-semibold text-slate-800 text-base mb-2" contenteditable="true">상세 설명 블록</h3>
+          <p class="leading-relaxed text-sm text-slate-600" contenteditable="true">
+            이 박스는 웹사이트 방문자에게 전달할 자세한 내용이나 기능 안내, 가이드 문구를 작성하는 곳입니다. 글자를 클릭하여 수정하세요.
+          </p>
+        `
+      },
+      card: {
+        width: 320,
+        height: 220,
+        bg: '#ffffff',
+        textColor: '#1e293b',
+        border: '1px solid #e2e8f0',
+        radius: '20px',
+        padding: '24px',
+        fontSize: '16px',
+        shadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+        html: `
+          <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold mb-3">★</div>
+          <h4 class="font-bold text-lg mb-1" contenteditable="true">서비스 특징</h4>
+          <p class="text-xs text-slate-500 leading-relaxed" contenteditable="true">여기에 카드의 주요 내용이나 혜택, 포인트 설명을 추가하세요.</p>
+        `
+      },
+      button: {
+        width: 200,
+        height: 56,
+        bg: '#2563eb',
+        textColor: '#ffffff',
+        border: '0px solid transparent',
+        radius: '14px',
+        padding: '12px',
+        fontSize: '16px',
+        shadow: '0 4px 6px -1px rgba(37,99,235,0.3)',
+        html: `
+          <div class="w-full h-full flex items-center justify-center font-semibold tracking-wide text-center" contenteditable="true">
+            지금 시작하기 →
+          </div>
+        `
+      },
+      image: {
+        width: 360,
+        height: 200,
+        bg: '#f1f5f9',
+        textColor: '#64748b',
+        border: '2px dashed #cbd5e1',
+        radius: '16px',
+        padding: '16px',
+        fontSize: '14px',
+        shadow: 'none',
+        html: `
+          <div class="w-full h-full flex flex-col items-center justify-center pointer-events-none text-center">
+            <svg class="w-8 h-8 text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            <span class="text-xs font-medium text-slate-500">이미지 영역 박스</span>
+          </div>
+        `
+      },
+      blank: {
+        width: 300,
+        height: 180,
+        bg: '#ffffff',
+        textColor: '#0f172a',
+        border: '1px dashed #94a3b8',
+        radius: '12px',
+        padding: '16px',
+        fontSize: '14px',
+        shadow: 'none',
+        html: `
+          <div contenteditable="true" class="w-full h-full">자유롭게 입력하거나 구성할 수 있는 빈 박스입니다.</div>
+        `
+      }
+    };
+
+    function createBox(type, posX = 60, posY = 60) {
+      emptyGuide.style.display = 'none';
+
+      const config = templates[type] || templates.blank;
+      const box = document.createElement('div');
+      box.className = 'craft-box absolute cursor-move select-none transition-[box-shadow]';
+      
+      // 위치 및 크기 스냅 정렬
+      if (state.snapToGrid) {
+        posX = Math.round(posX / state.gridSize) * state.gridSize;
+        posY = Math.round(posY / state.gridSize) * state.gridSize;
+      }
+
+      box.style.left = `${posX}px`;
+      box.style.top = `${posY}px`;
+      box.style.width = `${config.width}px`;
+      box.style.minHeight = `${config.height}px`;
+      box.style.backgroundColor = config.bg;
+      box.style.color = config.textColor;
+      box.style.border = config.border;
+      box.style.borderRadius = config.radius;
+      box.style.padding = config.padding;
+      box.style.fontSize = config.fontSize;
+      box.style.boxShadow = config.shadow;
+      box.style.zIndex = ++state.nextZIndex;
+      box.style.boxSizing = 'border-box';
+
+      // 내부 콘텐츠
+      box.innerHTML = `
+        <div class="box-content w-full h-full">${config.html}</div>
+        <!-- 크기 조절 리사이즈 핸들들 -->
+        <div class="resize-handle br" data-handle="br"></div>
+        <div class="resize-handle bl" data-handle="bl"></div>
+        <div class="resize-handle r" data-handle="r"></div>
+        <div class="resize-handle b" data-handle="b"></div>
+      `;
+
+      canvas.appendChild(box);
+      selectBox(box);
+      setupBoxEvents(box);
+      return box;
+    }
+
+    function selectBox(box) {
+      if (state.selectedElement === box) return;
+
+      // 이전 선택 해제
+      if (state.selectedElement) {
+        state.selectedElement.classList.remove('box-selected');
+      }
+
+      state.selectedElement = box;
+
+      if (box) {
+        box.classList.add('box-selected');
+        deleteBtn.disabled = false;
+        noSelectionPanel.classList.add('hidden');
+        selectionPanel.classList.remove('hidden');
+
+        // 속성값 동기화
+        syncInspectorValues(box);
+      } else {
+        deleteBtn.disabled = true;
+        noSelectionPanel.classList.remove('hidden');
+        selectionPanel.classList.add('hidden');
+      }
+    }
+
+    // 인스펙터 컨트롤 값들을 선택된 엘리먼트 스타일과 맞춤
+    function syncInspectorValues(box) {
+      const rect = box.getBoundingClientRect();
+      const style = window.getComputedStyle(box);
+
+      propWidth.value = Math.round(box.offsetWidth);
+      propHeight.value = Math.round(box.offsetHeight);
+
+      const bgHex = rgbToHex(style.backgroundColor);
+      propBgColor.value = bgHex;
+      propBgHex.value = bgHex;
+
+      const textHex = rgbToHex(style.color);
+      propTextColor.value = textHex;
+      propTextHex.value = textHex;
+
+      const r = parseInt(style.borderRadius) || 0;
+      propRadius.value = r;
+      radiusVal.textContent = `${r}px`;
+
+      const bw = parseInt(style.borderWidth) || 0;
+      propBorderWidth.value = bw;
+      borderVal.textContent = `${bw}px`;
+
+      const bcHex = rgbToHex(style.borderColor);
+      propBorderColor.value = bcHex;
+
+      const pad = parseInt(style.paddingTop) || 0;
+      propPadding.value = pad;
+      paddingVal.textContent = `${pad}px`;
+
+      const fs = parseInt(style.fontSize) || 16;
+      propFontSize.value = fs;
+      fontSizeVal.textContent = `${fs}px`;
+    }
+
+    function setupBoxEvents(box) {
+      box.addEventListener('mousedown', (e) => {
+        if (!state.isEditMode) return;
+
+        // 클릭된 위치가 리사이즈 핸들인 경우
+        if (e.target.classList.contains('resize-handle')) {
+          e.stopPropagation();
+          const handleType = e.target.dataset.handle;
+          state.activeResize = {
+            box,
+            handleType,
+            startX: e.clientX,
+            startY: e.clientY,
+            startWidth: box.offsetWidth,
+            startHeight: box.offsetHeight,
+            startLeft: box.offsetLeft
+          };
+          return;
+        }
+
+        // 텍스트 인라인 편집 클릭 시 드래그 동작은 하지 않고 선택만 활성화
+        if (e.target.isContentEditable) {
+          selectBox(box);
+          return;
+        }
+
+        e.stopPropagation();
+        selectBox(box);
+
+        // 박스 위치 드래그 시작
+        state.activeDrag = {
+          box,
+          startX: e.clientX,
+          startY: e.clientY,
+          startLeft: box.offsetLeft,
+          startTop: box.offsetTop
+        };
+      });
+    }
+
+    // 전역 마우스 이동 및 마우스 업 제어
+    window.addEventListener('mousemove', (e) => {
+      // 1. 박스 이동 드래그 중
+      if (state.activeDrag) {
+        const { box, startX, startY, startLeft, startTop } = state.activeDrag;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        let newLeft = Math.max(0, startLeft + dx);
+        let newTop = Math.max(0, startTop + dy);
+
+        // 스냅 기능
+        if (state.snapToGrid) {
+          newLeft = Math.round(newLeft / state.gridSize) * state.gridSize;
+          newTop = Math.round(newTop / state.gridSize) * state.gridSize;
+        }
+
+        box.style.left = `${newLeft}px`;
+        box.style.top = `${newTop}px`;
+      }
+
+      // 2. 박스 크기 리사이즈 중
+      if (state.activeResize) {
+        const { box, handleType, startX, startY, startWidth, startHeight, startLeft } = state.activeResize;
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+
+        if (handleType === 'br' || handleType === 'r') {
+          let newW = Math.max(80, startWidth + dx);
+          if (state.snapToGrid) newW = Math.round(newW / state.gridSize) * state.gridSize;
+          box.style.width = `${newW}px`;
+          propWidth.value = newW;
+        }
+
+        if (handleType === 'br' || handleType === 'b') {
+          let newH = Math.max(40, startHeight + dy);
+          if (state.snapToGrid) newH = Math.round(newH / state.gridSize) * state.gridSize;
+          box.style.minHeight = `${newH}px`;
+          box.style.height = `${newH}px`;
+          propHeight.value = newH;
+        }
+
+        if (handleType === 'bl') {
+          let newW = Math.max(80, startWidth - dx);
+          let newLeft = startLeft + dx;
+          if (state.snapToGrid) {
+            newW = Math.round(newW / state.gridSize) * state.gridSize;
+            newLeft = Math.round(newLeft / state.gridSize) * state.gridSize;
+          }
+          box.style.width = `${newW}px`;
+          box.style.left = `${newLeft}px`;
+          let newH = Math.max(40, startHeight + dy);
+          if (state.snapToGrid) newH = Math.round(newH / state.gridSize) * state.gridSize;
+          box.style.minHeight = `${newH}px`;
+          box.style.height = `${newH}px`;
+          propWidth.value = newW;
+          propHeight.value = newH;
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      state.activeDrag = null;
+      state.activeResize = null;
+    });
+
+    // 캔버스 배경 클릭 시 선택 해제
+    canvas.addEventListener('click', (e) => {
+      if (e.target === canvas) {
+        selectBox(null);
+      }
+    });
+
+    const paletteItems = document.querySelectorAll('.palette-item');
+    paletteItems.forEach(item => {
+      // 드래그 앤 드롭
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('box-type', item.dataset.type);
+      });
+
+      // 단순 클릭으로도 바로 추가 가능
+      item.addEventListener('click', () => {
+        const type = item.dataset.type;
+        const currentCount = canvas.querySelectorAll('.craft-box').length;
+        const offset = 40 + (currentCount * 25) % 250;
+        createBox(type, offset, offset);
+        showToast('새 박스가 캔버스에 추가되었습니다.');
+      });
+    });
+
+    canvas.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    canvas.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const type = e.dataTransfer.getData('box-type');
+      if (type) {
+        const rect = canvas.getBoundingClientRect();
+        const dropX = e.clientX - rect.left - 60;
+        const dropY = e.clientY - rect.top - 30;
+        createBox(type, Math.max(10, dropX), Math.max(10, dropY));
+        showToast('박스를 배치했습니다.');
+      }
+    });
+
+    // 너비 변경
+    propWidth.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.width = `${e.target.value}px`;
+    });
+
+    // 높이 변경
+    propHeight.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.minHeight = `${e.target.value}px`;
+      state.selectedElement.style.height = `${e.target.value}px`;
+    });
+
+    // 배경색 변경
+    propBgColor.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.backgroundColor = e.target.value;
+      propBgHex.value = e.target.value;
+    });
+    propBgHex.addEventListener('change', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.backgroundColor = e.target.value;
+      propBgColor.value = e.target.value;
+    });
+
+    // 글자색 변경
+    propTextColor.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.color = e.target.value;
+      propTextHex.value = e.target.value;
+    });
+    propTextHex.addEventListener('change', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.color = e.target.value;
+      propTextColor.value = e.target.value;
+    });
+
+    // 테두리 둥글기
+    propRadius.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.borderRadius = `${e.target.value}px`;
+      radiusVal.textContent = `${e.target.value}px`;
+    });
+
+    // 테두리 두께 & 색상
+    propBorderWidth.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.borderWidth = `${e.target.value}px`;
+      state.selectedElement.style.borderStyle = e.target.value > 0 ? 'solid' : 'none';
+      borderVal.textContent = `${e.target.value}px`;
+    });
+    propBorderColor.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.borderColor = e.target.value;
+    });
+
+    // 패딩 변경
+    propPadding.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.padding = `${e.target.value}px`;
+      paddingVal.textContent = `${e.target.value}px`;
+    });
+
+    // 폰트 크기
+    propFontSize.addEventListener('input', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.fontSize = `${e.target.value}px`;
+      fontSizeVal.textContent = `${e.target.value}px`;
+    });
+
+    // 텍스트 정렬
+    document.querySelectorAll('.align-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (!state.selectedElement) return;
+        state.selectedElement.style.textAlign = btn.dataset.align;
+        showToast(`정렬: ${btn.dataset.align}`);
+      });
+    });
+
+    // 그림자 변경
+    propShadow.addEventListener('change', (e) => {
+      if (!state.selectedElement) return;
+      state.selectedElement.style.boxShadow = e.target.value;
+    });
+
+    // 삭제
+    deleteBtn.addEventListener('click', () => {
+      if (state.selectedElement) {
+        state.selectedElement.remove();
+        selectBox(null);
+        showToast('박스를 삭제했습니다.');
+        if (canvas.querySelectorAll('.craft-box').length === 0) {
+          emptyGuide.style.display = 'flex';
+        }
+      }
+    });
+
+    // 키보드 Delete 키로 삭제
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        // 타이핑 입력 중이 아닐 때만 삭제
+        if (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') {
+          return;
+        }
+        if (state.selectedElement) {
+          state.selectedElement.remove();
+          selectBox(null);
+          showToast('박스가 삭제되었습니다.');
+          if (canvas.querySelectorAll('.craft-box').length === 0) {
+            emptyGuide.style.display = 'flex';
+          }
+        }
+      }
+    });
+
+    // 복제
+    duplicateBtn.addEventListener('click', () => {
+      if (!state.selectedElement) return;
+      const clone = state.selectedElement.cloneNode(true);
+      const currLeft = parseInt(state.selectedElement.style.left) || 20;
+      const currTop = parseInt(state.selectedElement.style.top) || 20;
+      
+      clone.style.left = `${currLeft + 20}px`;
+      clone.style.top = `${currTop + 20}px`;
+      clone.style.zIndex = ++state.nextZIndex;
+      clone.classList.remove('box-selected');
+      
+      canvas.appendChild(clone);
+      setupBoxEvents(clone);
+      selectBox(clone);
+      showToast('박스가 복제되었습니다.');
+    });
+
+    // 순서 앞뒤 조정
+    bringFrontBtn.addEventListener('click', () => {
+      if (state.selectedElement) {
+        state.selectedElement.style.zIndex = ++state.nextZIndex;
+        showToast('맨 앞으로 이동했습니다.');
+      }
+    });
+    sendBackBtn.addEventListener('click', () => {
+      if (state.selectedElement) {
+        state.selectedElement.style.zIndex = 1;
+        showToast('맨 뒤로 이동했습니다.');
+      }
+    });
+
+    // 전체 비우기
+    clearCanvasBtn.addEventListener('click', () => {
+      const boxes = canvas.querySelectorAll('.craft-box');
+      if (boxes.length === 0) return;
+      boxes.forEach(b => b.remove());
+      selectBox(null);
+      emptyGuide.style.display = 'flex';
+      showToast('캔버스를 모두 비웠습니다.');
+    });
+
+    // 모눈 그리드 토글
+    gridToggleBtn.addEventListener('click', () => {
+      state.showGrid = !state.showGrid;
+      canvas.classList.toggle('canvas-plain', !state.showGrid);
+      showToast(state.showGrid ? '그리드가 켜졌습니다.' : '그리드가 숨겨졌습니다.');
+    });
+
+    // 자석 스냅 토글
+    snapToggleBtn.addEventListener('click', () => {
+      state.snapToGrid = !state.snapToGrid;
+      snapLabel.textContent = state.snapToGrid ? '스냅 켬' : '스냅 끔';
+      showToast(state.snapToGrid ? '스냅 이동이 활성화되었습니다.' : '스냅 이동이 꺼졌습니다.');
+    });
+
+    // 편집 / 미리보기 모드 전환
+    modeToggleBtn.addEventListener('click', () => {
+      state.isEditMode = !state.isEditMode;
+      const editables = canvas.querySelectorAll('[contenteditable]');
+
+      if (!state.isEditMode) {
+        // 미리보기 모드 활성화
+        selectBox(null);
+        canvas.classList.add('canvas-plain');
+        document.getElementById('palette-sidebar').classList.add('opacity-40', 'pointer-events-none');
+        document.getElementById('inspector-sidebar').classList.add('opacity-40', 'pointer-events-none');
+        canvas.querySelectorAll('.resize-handle').forEach(h => h.style.display = 'none');
+        editables.forEach(ed => ed.setAttribute('contenteditable', 'false'));
+        
+        modeText.textContent = '편집 복귀';
+        modeToggleBtn.classList.replace('bg-slate-800', 'bg-blue-600');
+        showToast('미리보기 모드로 전환되었습니다.');
+      } else {
+        // 편집 모드로 복귀
+        if (state.showGrid) canvas.classList.remove('canvas-plain');
+        document.getElementById('palette-sidebar').classList.remove('opacity-40', 'pointer-events-none');
+        document.getElementById('inspector-sidebar').classList.remove('opacity-40', 'pointer-events-none');
+        canvas.querySelectorAll('.resize-handle').forEach(h => h.style.display = '');
+        editables.forEach(ed => ed.setAttribute('contenteditable', 'true'));
+        
+        modeText.textContent = '미리보기';
+        modeToggleBtn.classList.replace('bg-blue-600', 'bg-slate-800');
+        showToast('편집 모드로 복귀했습니다.');
+      }
+    });
+
+    // HTML 내보내기 로직
+    exportBtn.addEventListener('click', () => {
+      const cloneCanvas = canvas.cloneNode(true);
+
+      // 클론에서 편집용 UI 제거
+      cloneCanvas.querySelectorAll('.resize-handle').forEach(h => h.remove());
+      const guide = cloneCanvas.querySelector('#empty-state-guide');
+      if (guide) guide.remove();
+
+      cloneCanvas.querySelectorAll('.craft-box').forEach(box => {
+        box.classList.remove('box-selected');
+        box.style.cursor = 'default';
+      });
+
+      cloneCanvas.querySelectorAll('[contenteditable]').forEach(el => {
+        el.removeAttribute('contenteditable');
+      });
+
+      const cleanHtml = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>내 맞춤 웹사이트</title>
+  <script src="https://cdn.tailwindcss.com"><\/script>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; margin: 0; padding: 24px; display: flex; justify-content: center; }
+    .site-wrapper { position: relative; width: 100%; max-width: 1020px; min-height: 960px; background: #ffffff; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.06); overflow: hidden; }
+  </style>
+</head>
+<body>
+  <div class="site-wrapper">
+    ${cloneCanvas.innerHTML}
+  </div>
+</body>
+</html>`;
+
+      exportedCodeArea.value = cleanHtml;
+      exportModal.classList.remove('hidden');
+    });
+
+    closeExportBtn.addEventListener('click', () => {
+      exportModal.classList.add('hidden');
+    });
+
+    // 클립보드 복사
+    copyHtmlBtn.addEventListener('click', () => {
+      exportedCodeArea.select();
+      document.execCommand('copy');
+      copyBtnText.textContent = '복사 완료!';
+      setTimeout(() => {
+        copyBtnText.textContent = '클립보드에 복사';
+      }, 2000);
+      showToast('코드가 클립보드에 복사되었습니다.');
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+
+      // 사용자가 바로 테스트해볼 수 있는 기본 박스 배치
+      const box1 = createBox('heading', 40, 40);
+      const box2 = createBox('text', 40, 190);
+      const box3 = createBox('card', 520, 40);
+      const box4 = createBox('button', 40, 380);
+
+      // 기본 선택 상태 해제
+      selectBox(null);
+    });
+  </script>
+</body>
+</html>
